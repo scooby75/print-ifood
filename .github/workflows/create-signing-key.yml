@@ -1,0 +1,30 @@
+name: Create Permanent Signing Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate passwords
+        shell: bash
+        run: |
+          test -n "${{ secrets.KEYSTORE_PASSWORD }}" || (echo "Missing KEYSTORE_PASSWORD" && exit 1)
+          test -n "${{ secrets.KEY_PASSWORD }}" || (echo "Missing KEY_PASSWORD" && exit 1)
+
+      - name: Generate permanent signing key
+        shell: bash
+        run: |
+          keytool -genkeypair -v             -keystore RouteMonitor-release.keystore             -storepass "${{ secrets.KEYSTORE_PASSWORD }}"             -keypass "${{ secrets.KEY_PASSWORD }}"             -alias routemonitor             -keyalg RSA -keysize 4096 -validity 10000             -dname "CN=RouteMonitor, OU=Mobile, O=GoalStats, L=Joao Pessoa, ST=PB, C=BR"
+          base64 -w 0 RouteMonitor-release.keystore > KEYSTORE_BASE64.txt
+          keytool -list -v -keystore RouteMonitor-release.keystore             -storepass "${{ secrets.KEYSTORE_PASSWORD }}"             -alias routemonitor | grep -E "SHA256:|Valid from:"
+
+      - name: Upload key package
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouteMonitor-permanent-signing-key
+          path: |
+            RouteMonitor-release.keystore
+            KEYSTORE_BASE64.txt
+          retention-days: 1
