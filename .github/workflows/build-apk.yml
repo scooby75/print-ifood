@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,10 +16,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+
+      - name: Build release APK
+        run: gradle assembleRelease --stacktrace
+
+      - name: Generate release signing key
+        run: |
+          keytool -genkeypair -v -keystore release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -keypass "${{ secrets.KEY_PASSWORD }}" -alias routemonitor -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RouteMonitor, OU=Mobile, O=GoalStats, L=Joao Pessoa, ST=PB, C=BR"
+
+      - name: Find Android build tools
+        id: bt
+        shell: bash
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          echo "apksigner=$APKSIGNER" >> "$GITHUB_OUTPUT"
+
+      - name: Sign release APK
+        run: |
+          "${{ steps.bt.outputs.apksigner }}" sign             --ks release.keystore             --ks-key-alias routemonitor             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}"             --key-pass "pass:${{ secrets.KEY_PASSWORD }}"             --out app/build/outputs/apk/release/RouteMonitor-v1-release.apk             app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify signature
+        run: '"${{ steps.bt.outputs.apksigner }}" verify --verbose app/build/outputs/apk/release/RouteMonitor-v1-release.apk'
+
       - uses: actions/upload-artifact@v4
         with:
-          name: RouteMonitor-v1-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: RouteMonitor-v1-release
+          path: app/build/outputs/apk/release/RouteMonitor-v1-release.apk
           if-no-files-found: error
