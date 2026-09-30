@@ -1,4 +1,4 @@
-name: Build Android Release
+name: Build Private Android APK
 on:
   workflow_dispatch:
   push:
@@ -9,47 +9,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Build release APK and AAB
+      - name: Validate signing secrets
+        shell: bash
         run: |
-          gradle assembleRelease bundleRelease --stacktrace
+          test -n "${{ secrets.KEYSTORE_BASE64 }}" || (echo "Missing KEYSTORE_BASE64" && exit 1)
+          test -n "${{ secrets.KEYSTORE_PASSWORD }}" || (echo "Missing KEYSTORE_PASSWORD" && exit 1)
+          test -n "${{ secrets.KEY_PASSWORD }}" || (echo "Missing KEY_PASSWORD" && exit 1)
 
-      - name: Generate temporary release signing key
+      - name: Restore permanent signing key
+        shell: bash
         run: |
-          keytool -genkeypair -v -keystore release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -keypass "${{ secrets.KEY_PASSWORD }}" -alias routemonitor -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RouteMonitor, OU=Mobile, O=GoalStats, L=Joao Pessoa, ST=PB, C=BR"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          keytool -list -keystore release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" -alias routemonitor >/dev/null
 
-      - name: Locate Android build tools
+      - name: Build release APK
+        run: gradle assembleRelease --stacktrace
+
+      - name: Find Android build tools
         id: bt
         shell: bash
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           echo "apksigner=$APKSIGNER" >> "$GITHUB_OUTPUT"
 
-      - name: Sign APK
+      - name: Sign private APK
         run: |
-          "${{ steps.bt.outputs.apksigner }}" sign             --ks release.keystore --ks-key-alias routemonitor             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}"             --key-pass "pass:${{ secrets.KEY_PASSWORD }}"             --out app/build/outputs/apk/release/RouteMonitor-v1.1-release.apk             app/build/outputs/apk/release/app-release-unsigned.apk
+          "${{ steps.bt.outputs.apksigner }}" sign             --ks release.keystore             --ks-key-alias routemonitor             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}"             --key-pass "pass:${{ secrets.KEY_PASSWORD }}"             --out app/build/outputs/apk/release/RouteMonitor-private-release.apk             app/build/outputs/apk/release/app-release-unsigned.apk
 
-      - name: Sign AAB
+      - name: Verify APK and print certificate
+        shell: bash
         run: |
-          jarsigner -keystore release.keystore             -storepass "${{ secrets.KEYSTORE_PASSWORD }}"             -keypass "${{ secrets.KEY_PASSWORD }}"             app/build/outputs/bundle/release/app-release.aab routemonitor
-          cp app/build/outputs/bundle/release/app-release.aab app/build/outputs/bundle/release/RouteMonitor-v1.1.aab
-
-      - name: Verify artifacts
-        run: |
-          "${{ steps.bt.outputs.apksigner }}" verify --verbose app/build/outputs/apk/release/RouteMonitor-v1.1-release.apk
-          jarsigner -verify -verbose -certs app/build/outputs/bundle/release/RouteMonitor-v1.1.aab
+          "${{ steps.bt.outputs.apksigner }}" verify --verbose --print-certs             app/build/outputs/apk/release/RouteMonitor-private-release.apk
+          sha256sum app/build/outputs/apk/release/RouteMonitor-private-release.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RouteMonitor-v1.1-PlayStore
-          path: |
-            app/build/outputs/apk/release/RouteMonitor-v1.1-release.apk
-            app/build/outputs/bundle/release/RouteMonitor-v1.1.aab
+          name: RouteMonitor-private-release
+          path: app/build/outputs/apk/release/RouteMonitor-private-release.apk
           if-no-files-found: error
