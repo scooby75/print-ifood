@@ -40,5 +40,5 @@ class RouteAccessibilityService : AccessibilityService() {
  private fun collectText(node:AccessibilityNodeInfo):List<String>{
   val out=mutableListOf<String>();fun walk(n:AccessibilityNodeInfo?){if(n==null)return;n.text?.toString()?.takeIf{it.isNotBlank()}?.let(out::add);n.contentDescription?.toString()?.takeIf{it.isNotBlank()}?.let(out::add);for(i in 0 until n.childCount)walk(n.getChild(i))};walk(node);return out
  }
- private fun norm(value:String):String=Normalizer.normalize(value,Normalizer.Form.NFD).replace("\p{M}+".toRegex(),"").uppercase(Locale.ROOT).replace("\s+".toRegex()," ").trim()
+ private fun norm(value:String):String=Normalizer.normalize(value,Normalizer.Form.NFD).replace("""\p{M}+""".toRegex(),"").uppercase(Locale.ROOT).replace("""\s+""".toRegex()," ").trim()
 }
